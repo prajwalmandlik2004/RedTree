@@ -21,8 +21,8 @@ class AppTranslations extends Translations {
       "language": "Language",
       "english": "English",
       "date": "Date",
-  "modify": "Modify",
-  "time": "Time",
+      "modify": "Modify",
+      "time": "Time",
       "format24h": "24h",
       "formatAMPM": "am/pm",
       "format_yyyy_mm_dd": "yyyy/mm/dd",
@@ -126,7 +126,7 @@ class AppTranslations extends Translations {
       "searchPlaceholder": "Search...",
       "noteDeleteSuccess": "Note deleted successfully!",
       "searchNoteHint": "Search by name or note...",
-
+      "list": "List",
       "confirmMove": "Confirm Move",
       "itemsMovedSuccess": "Items moved successfully",
       "moveCancelled": "Move cancelled",
@@ -137,7 +137,6 @@ class AppTranslations extends Translations {
       "folderNotFound": "Folder not found",
       "tapToConfirmOrSelectAnother": "Tap OK to confirm or select another folder",
       "moveCompleted": "Move completed",
-
       "crop": "Crop",
     },
     'fr': {
@@ -263,8 +262,7 @@ class AppTranslations extends Translations {
       "searchPlaceholder": "Buscar...",
       "noteDeleteSuccess": "¡Nota eliminada con éxito!",
       "searchNoteHint": "Buscar por nombre o nota...",
-
-
+      "list": "Liste",
       "confirmMove": "Confirmer le déplacement",
       "itemsMovedSuccess": "Éléments déplacés avec succès",
       "moveCancelled": "Déplacement annulé",
@@ -413,8 +411,7 @@ class AppTranslations extends Translations {
       "folderNotFound": "Ordner nicht gefunden",
       "tapToConfirmOrSelectAnother": "Tippen Sie auf OK zur Bestätigung oder wählen Sie einen anderen Ordner",
       "moveCompleted": "Verschieben abgeschlossen",
-
-
+      "list": "Liste",
       "crop": "Ernte",
 
     },
@@ -554,6 +551,7 @@ class AppTranslations extends Translations {
       "tapToConfirmOrSelectAnother": "Toca OK para confirmar o selecciona otra carpeta",
       "moveCompleted": "Movimiento completado",
       "crop": "Cultivo",
+      "list": "Lista",
 
     },
     'hi': {
@@ -691,7 +689,7 @@ class AppTranslations extends Translations {
       "tapToConfirmOrSelectAnother": "पुष्टि के लिए OK दबाएँ या कोई अन्य फ़ोल्डर चुनें",
       "moveCompleted": "स्थानांतरण पूरा हुआ",
       "crop": "काँटे",
-
+      "list": "सूची",
     }
   };
 }

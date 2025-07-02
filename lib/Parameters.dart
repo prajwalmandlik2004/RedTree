@@ -1,8 +1,6 @@
 import 'package:RedTree/FileManager.dart';
-import 'package:RedTree/FileManager.dart';
 import 'package:camera/camera.dart';
 import 'package:flutter/material.dart';
-import 'package:file_picker/file_picker.dart';
 import 'package:get/get.dart';
 import 'package:get/get_core/src/get_main.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -68,20 +66,17 @@ class _ParametersScreenState extends State<ParametersScreen> {
     });
     _loadPrefix();
     _loadSavedFolderPath();
-    _loadSavedFileAspect();// Load previously saved preferences
+    _loadSavedFileAspect();
     _loadSavedPreferences();
 
-    // Listen to changes in languageNotifier and save to SharedPreferences
     _languageNotifier.addListener(() async {
       await _saveLanguageToPrefs(_languageNotifier.value);
     });
 
-    // Listen to changes in dateFormatNotifier and save to SharedPreferences
     dateFormatNotifier.addListener(() async {
       await _saveDateFormatToPrefs(dateFormatNotifier.value);
     });
 
-    // Listen to changes in timeFormatNotifier and save to SharedPreferences
     timeFormatNotifier.addListener(() async {
       await _saveTimeFormatToPrefs(timeFormatNotifier.value);
     });
@@ -90,7 +85,6 @@ class _ParametersScreenState extends State<ParametersScreen> {
     _filteredItems = _items;
     fileNamingPrefixNotifier.value = _generatePrefixFromDateFormat(dateFormatNotifier.value);
 
-    // Initialize the map with items and their corresponding widgets
     _itemWidgets['activateRedTree'] = ValueListenableBuilder<bool>(
       valueListenable: isRedTreeActivatedNotifier,
       builder: (context, isRedTreeActivated, child) {
@@ -104,7 +98,7 @@ class _ParametersScreenState extends State<ParametersScreen> {
           subtitle: Text(
             isRedTreeActivated
                 ? 'redTreeDefaultSettings'.tr
-                : 'redTreeDefaultSettings'.tr, // you may differentiate if needed
+                : 'redTreeDefaultSettings'.tr,
             style: TextStyle(
               fontSize: 12,
               color: isRedTreeActivated ? Colors.black : Colors.grey,
@@ -396,7 +390,7 @@ class _ParametersScreenState extends State<ParametersScreen> {
       valueListenable: isRedTreeActivatedNotifier,
       builder: (context, isRedTreeActive, _) {
         return ValueListenableBuilder<String>(
-          valueListenable: fileAspectNotifier, // this will now be a key like 'smallImage'
+          valueListenable: fileAspectNotifier,
           builder: (context, fileAspectKey, _) {
             return ValueListenableBuilder<bool>(
               valueListenable: fileAspectEnabledNotifier,
@@ -411,39 +405,37 @@ class _ParametersScreenState extends State<ParametersScreen> {
                     ),
                   ),
                   subtitle: Text(
-                    '${'yourPresentDesignatedFile'.tr}: ${fileAspectKey.tr}', // apply tr here
+                    '${'yourPresentDesignatedFile'.tr}: ${fileAspectKey.tr}',
                     style: TextStyle(
                       fontSize: 14,
                       color: isRedTreeActive ? Colors.black : Colors.grey,
                     ),
                   ),
                   popupOptions: [
+                    'list'.tr,
                     'smallImage'.tr,
-                    'midImage'.tr,
                     'largeImage'.tr,
                   ],
                   currentValue: fileAspectKey.tr,
 
                   onOptionSelected: (selectedTranslatedValue) async {
-                    // Create a bidirectional map for translations
                     final aspectMap = {
+                      'list': 'list'.tr,
                       'smallImage': 'smallImage'.tr,
-                      'midImage': 'midImage'.tr,
                       'largeImage': 'largeImage'.tr,
+
                     };
 
                     final rawKey = aspectMap.entries
                         .firstWhere(
                           (entry) => entry.value == selectedTranslatedValue,
-                      orElse: () => MapEntry('smallImage', 'smallImage'.tr),
+                      orElse: () => MapEntry('list', 'list'.tr),
                     )
                         .key;
 
-                    // Update and persist the value
                     fileAspectNotifier.value = rawKey;
                     await _saveFileAspectToPrefs(rawKey);
 
-                    // Force a media reload
                     mediaReloadNotifier.value++;
                   },
                   switchValue: isAspectEnabled,
@@ -493,16 +485,14 @@ class _ParametersScreenState extends State<ParametersScreen> {
                   ValueListenableBuilder<String>(
                     valueListenable: languageNotifier,
                     builder: (context, currentLangCode, _) {
-                      // Map language codes to their display names
                       final langDisplayMap = {
-                        'en': 'english'.tr,  // Will show "English"
-                        'fr': 'french'.tr,   // Will show "French"
-                        'de': 'german'.tr,   // Will show "German"
-                        'es': 'spanish'.tr,  // Will show "Spanish"
-                        'hi': 'hindi'.tr,    // Will show "Hindi"
+                        'en': 'english'.tr,
+                        'fr': 'french'.tr,
+                        'de': 'german'.tr,
+                        'es': 'spanish'.tr,
+                        'hi': 'hindi'.tr,
                       };
 
-                      // Create list of available language display names
                       final languageOptions = ['english'.tr, 'french'.tr, 'german'.tr, 'spanish'.tr, 'hindi'.tr];
 
                       return _buildPreferenceRow(
@@ -595,8 +585,8 @@ class _ParametersScreenState extends State<ParametersScreen> {
 
   @override
   void dispose() {
-    _delayController.dispose(); // Dispose the controller
-    _searchController.dispose(); // Dispose the search controller
+    _delayController.dispose();
+    _searchController.dispose();
     _languageNotifier.dispose();
     fileNamingPrefixNotifier.removeListener(_savePrefixToPrefs);
     folderPathNotifier.removeListener(_saveFolderPathToPrefs);
@@ -607,39 +597,33 @@ class _ParametersScreenState extends State<ParametersScreen> {
   Future<void> _loadSavedPreferences() async {
     final prefs = await SharedPreferences.getInstance();
 
-    // Load saved language
     String? savedLanguage = prefs.getString('language');
     if (savedLanguage != null) {
       _languageNotifier.value = savedLanguage;
     }
 
-    // Load saved date format
     String? savedDateFormat = prefs.getString('dateFormat');
     if (savedDateFormat != null) {
       dateFormatNotifier.value = savedDateFormat;
     }
 
-    // Load saved time format
     String? savedTimeFormat = prefs.getString('timeFormat');
     if (savedTimeFormat != null) {
       timeFormatNotifier.value = savedTimeFormat;
     }
   }
 
-  // Method to save selected language to SharedPreferences
   Future<void> _saveLanguageToPrefs(String languageCode) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('languageCode', languageCode);
   }
 
-// Method to save selected date format to SharedPreferences
   Future<void> _saveDateFormatToPrefs(String dateFormat) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('dateFormat', dateFormat);
     print('Auto-saved new date format: $dateFormat');
   }
 
-// Method to save selected time format to SharedPreferences
   Future<void> _saveTimeFormatToPrefs(String timeFormat) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('timeFormat', timeFormat);
@@ -648,12 +632,11 @@ class _ParametersScreenState extends State<ParametersScreen> {
 
   Future<void> _saveFileAspectToPrefs(String fileAspectKey) async {
     final prefs = await SharedPreferences.getInstance();
-    await prefs.setString('fileAspect', fileAspectKey); // Don't use `.tr` here
+    await prefs.setString('fileAspect', fileAspectKey);
     print('Auto-saved new file aspect key: $fileAspectKey');
   }
 
 
-// Method to save file aspect enabled status to SharedPreferences
   Future<void> _saveFileAspectEnabledToPrefs(bool isEnabled) async {
     final prefs = await SharedPreferences.getInstance();
     await prefs.setBool('fileAspectEnabled', isEnabled);
@@ -665,7 +648,7 @@ class _ParametersScreenState extends State<ParametersScreen> {
 
     String? savedKey = prefs.getString('fileAspect');
     if (savedKey != null) {
-      fileAspectNotifier.value = savedKey; // Use raw key, not translated
+      fileAspectNotifier.value = savedKey;
     }
 
     bool? savedFileAspectEnabled = prefs.getBool('fileAspectEnabled');
@@ -681,7 +664,6 @@ class _ParametersScreenState extends State<ParametersScreen> {
     print('Auto-saved new folder path: ${folderPathNotifier.value}');
   }
 
-// Optional: Load saved folder path if it exists
   Future<void> _loadSavedFolderPath() async {
     final prefs = await SharedPreferences.getInstance();
     String? savedFolderPath = prefs.getString('folderPath');
@@ -736,14 +718,14 @@ class _ParametersScreenState extends State<ParametersScreen> {
           controller: _searchController,
           autofocus: true,
           decoration: InputDecoration(
-            hintText: 'searchHint'.tr, // Translated
+            hintText: 'searchHint'.tr,
             border: InputBorder.none,
             hintStyle: const TextStyle(color: Colors.white70),
           ),
           style: const TextStyle(color: Colors.black),
           onChanged: _filterItems,
         )
-            : Text('parameters'.tr), // Translated
+            : Text('parameters'.tr),
         actions: [
           IconButton(
             icon: Icon(_isSearching ? Icons.close : Icons.search),
@@ -837,48 +819,11 @@ Widget _buildPreferenceRow(
       required List<String> options,
       required Function(String) onSelected,
     }) {
-  // return Padding(
-  //   padding: const EdgeInsets.only(bottom: 2),
-  //   child: Row(
-  //     mainAxisAlignment: MainAxisAlignment.spaceBetween,
-  //     children: [
-  //       SizedBox(
-  //         width: 90,
-  //         child: Text(
-  //           label.tr, // Translate label
-  //           style: TextStyle(
-  //             fontWeight: FontWeight.bold,
-  //             color: isEnabled ? Colors.black : Colors.grey,
-  //           ),
-  //         ),
-  //       ),
-  //       Row(
-  //         crossAxisAlignment: CrossAxisAlignment.start,
-  //         children: [
-  //           Text(
-  //             value.tr, // Translate current value
-  //             style: TextStyle(color: isEnabled ? Colors.black : Colors.grey),
-  //           ),
-  //         ],
-  //       ),
-  //       Padding(
-  //         padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
-  //         child: CustomPopupTextButton(
-  //           isEnabled: isEnabled,
-  //           options: options.map((e) => e.tr).toList(), // Translate each option
-  //           onSelected: onSelected,
-  //           enabledText: 'define'.tr,
-  //           disabledText: 'modify'.tr,
-  //         ),
-  //       )
-  //     ],
-  //   ),
-  // );
+
   return Padding(
     padding: const EdgeInsets.only(bottom: 2),
     child: Row(
       children: [
-        // Label (25%)
         Expanded(
           flex: 25,
           child: Text(
@@ -890,7 +835,7 @@ Widget _buildPreferenceRow(
           ),
         ),
 
-        const SizedBox(width: 8), // spacing
+        const SizedBox(width: 8),
 
         // Value (25%)
         Expanded(

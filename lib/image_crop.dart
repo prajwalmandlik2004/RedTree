@@ -36,17 +36,9 @@ class _ImageCropScreenState extends State<ImageCropScreen> {
       return;
     }
 
-    // Rotate if needed
-    // final int angle = action?.rotateAngle.toInt() ?? 0;
-    // if (angle != 0) {
-    //   image = img.copyRotate(image, angle);
-    // }
 
-    // Flip
-    // if (action?.flipX == true) image = img.flipHorizontal(image);
     if (action?.flipY == true) image = img.flipVertical(image);
 
-    // Clamp crop region
     final int left = cropRect.left.round().clamp(0, image.width - 1);
     final int top = cropRect.top.round().clamp(0, image.height - 1);
     final int width = cropRect.width.round().clamp(1, image.width - left);
@@ -91,22 +83,14 @@ class _ImageCropScreenState extends State<ImageCropScreen> {
           fit: BoxFit.contain,
           mode: ExtendedImageMode.editor,
           extendedImageEditorKey: editorKey,
-          // initEditorConfigHandler: (state) {
-          //   return EditorConfig(
-          //     maxScale: 8.0,
-          //     cropAspectRatio: 1.0,
-          //     hitTestSize: 20.0,
-          //     cropRectPadding: const EdgeInsets.all(20.0),
-          //     cropLayerPainter: const EditorCropLayerPainter(),
-          //   );
-          // },
+
             initEditorConfigHandler: (state) {
               return EditorConfig(
                 maxScale: 8.0,
-                cropAspectRatio: null, // null means freeform
+                cropAspectRatio: null,
                 hitTestSize: 20.0,
                 cropRectPadding: EdgeInsets.zero,
-                initCropRectType: InitCropRectType.imageRect, // ✅ use full image
+                initCropRectType: InitCropRectType.imageRect,
                 cropLayerPainter: const EditorCropLayerPainter(),
               );
             }

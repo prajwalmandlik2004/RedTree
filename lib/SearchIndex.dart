@@ -1,6 +1,9 @@
+import 'dart:convert';
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:path/path.dart' as p;
+import 'package:path_provider/path_provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'globals.dart';
 
@@ -21,6 +24,22 @@ class IndexedEntry {
     this.noteContent,
 
   });
+
+  Map<String, dynamic> toJson() => {
+    'path': path,
+    'name': name,
+    'parentPath': parentPath,
+    'isFolder': isFolder,
+    'noteContent': noteContent,
+  };
+
+  factory IndexedEntry.fromJson(Map<String, dynamic> json) => IndexedEntry(
+    path: json['path'],
+    name: json['name'],
+    parentPath: json['parentPath'],
+    isFolder: json['isFolder'],
+    noteContent: json['noteContent'],
+  );
 
   IndexedEntry copyWith({
     String? path,
@@ -53,6 +72,12 @@ class IndexManager {
 
   /// Whether the index is ready
   bool isIndexing = false;
+
+  setEntries(List<IndexedEntry> entries) {
+    _allIndexedEntries
+      ..clear()
+      ..addAll(entries);
+  }
 
   /// Indexes everything recursively under rootPath
   Future<void> indexFileSystemRecursively(String rootPath) async {
@@ -140,38 +165,6 @@ class IndexManager {
   }
 
   /// Updates index after a rename/move
-  // Future<void> updateForRename(String oldPath, String newPath, bool isFolder) async {
-  //   oldPath = p.normalize(oldPath);
-  //   newPath = p.normalize(newPath);
-  //
-  //   if (oldPath == newPath) return;
-  //
-  //   final index = _allIndexedEntries.indexWhere((e) => e.path == oldPath);
-  //   if (index == -1) return;
-  //
-  //   final oldEntry = _allIndexedEntries[index];
-  //   final newEntry = oldEntry.copyWith(
-  //     path: newPath,
-  //     name: p.basename(newPath),
-  //     parentPath: p.dirname(newPath),
-  //   );
-  //   _allIndexedEntries[index] = newEntry;
-  //
-  //   if (isFolder) {
-  //     final children = _allIndexedEntries.where((e) => e.path.startsWith('$oldPath/')).toList();
-  //
-  //     for (final child in children) {
-  //       final relative = child.path.substring(oldPath.length);
-  //       final updatedPath = '$newPath$relative';
-  //       final i = _allIndexedEntries.indexOf(child);
-  //
-  //       _allIndexedEntries[i] = child.copyWith(
-  //         path: updatedPath,
-  //         parentPath: p.dirname(updatedPath),
-  //       );
-  //     }
-  //   }
-  // }
 
 
   Future<void> updateForRename(String oldPath, String newPath, bool isFolder) async {
@@ -272,84 +265,9 @@ class IndexManager {
       );
     }
 
-    // ✅ Force a UI update (e.g. reload TreeView or setState)
     mediaReloadNotifier.value++;
 
   }
-
-  // Future<void> updateForFolderRename(String oldFolderPath, String newFolderPath) async {
-  //   oldFolderPath = p.normalize(oldFolderPath);
-  //   newFolderPath = p.normalize(newFolderPath);
-  //
-  //   if (oldFolderPath == newFolderPath) return;
-  //
-  //   // Update main folder entry
-  //   final index = _allIndexedEntries.indexWhere((e) => e.path == oldFolderPath && e.isFolder);
-  //   if (index == -1) return;
-  //
-  //   final oldEntry = _allIndexedEntries[index];
-  //   final newEntry = oldEntry.copyWith(
-  //     path: newFolderPath,
-  //     name: p.basename(newFolderPath),
-  //     parentPath: p.dirname(newFolderPath),
-  //   );
-  //   _allIndexedEntries[index] = newEntry;
-  //
-  //   // Update notes in notifier for the renamed folder
-  //   final Map<String, String> updatedNotes = Map.from(mediaNotesNotifier.value);
-  //   if (updatedNotes.containsKey(oldFolderPath)) {
-  //     updatedNotes[newFolderPath] = updatedNotes.remove(oldFolderPath)!;
-  //   }
-  //
-  //   // Rename .txt file if exists
-  //   final oldNoteFile = File('$oldFolderPath.txt');
-  //   if (await oldNoteFile.exists()) {
-  //     final newNoteFile = File('$newFolderPath.txt');
-  //     try {
-  //       await oldNoteFile.rename(newNoteFile.path);
-  //     } catch (e) {
-  //       debugPrint('Failed to rename folder note: $e');
-  //     }
-  //   }
-  //
-  //   // Update all child entries
-  //   final children = _allIndexedEntries
-  //       .where((e) => e.path.startsWith('$oldFolderPath/'))
-  //       .toList();
-  //
-  //   for (final child in children) {
-  //     final relative = child.path.substring(oldFolderPath.length);
-  //     final updatedPath = '$newFolderPath$relative';
-  //     final i = _allIndexedEntries.indexOf(child);
-  //
-  //     final updatedChild = child.copyWith(
-  //       path: updatedPath,
-  //       parentPath: p.dirname(updatedPath),
-  //       name: p.basename(updatedPath),
-  //     );
-  //     _allIndexedEntries[i] = updatedChild;
-  //
-  //     // Update notes in memory
-  //     if (updatedNotes.containsKey(child.path)) {
-  //       updatedNotes[updatedPath] = updatedNotes.remove(child.path)!;
-  //     }
-  //
-  //     // Rename .txt files for child files
-  //     if (!child.isFolder) {
-  //       final childNoteFile = File('${child.path}.txt');
-  //       if (await childNoteFile.exists()) {
-  //         final newChildNotePath = '$updatedPath.txt';
-  //         try {
-  //           await childNoteFile.rename(newChildNotePath);
-  //         } catch (e) {
-  //           debugPrint('Failed to rename note for child file: $e');
-  //         }
-  //       }
-  //     }
-  //   }
-  //
-  //   mediaNotesNotifier.value = updatedNotes;
-  // }
 
 
 
@@ -445,4 +363,43 @@ class IndexManager {
         lower.contains("/secure") ||
         lower.contains("/.thumbnails");
   }
+
+
+
+
+  Future<void> saveIndexToDisk() async {
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File('${dir.path}/file_index.json');
+    final jsonData = _allIndexedEntries.map((e) => e.toJson()).toList();
+    await file.writeAsString(jsonEncode(jsonData));
+  }
+
+
+  Future<List<IndexedEntry>> loadIndexFromDisk() async {
+    final dir = await getApplicationDocumentsDirectory();
+    final file = File('${dir.path}/file_index.json');
+
+    if (await file.exists()) {
+      final jsonStr = await file.readAsString();
+      final List<dynamic> jsonList = jsonDecode(jsonStr);
+      final entries = jsonList.map((e) => IndexedEntry.fromJson(e)).toList();
+
+      // Update in-memory index
+      _allIndexedEntries
+        ..clear()
+        ..addAll(entries);
+
+      // Update notes
+      mediaNotesNotifier.value = {
+        for (final entry in entries)
+          if (entry.noteContent != null && !entry.isFolder) entry.path: entry.noteContent!,
+      };
+
+      return entries;
+    }
+
+    return [];
+  }
+
+
 }

@@ -184,14 +184,13 @@ class NoteUtils {
 
     final List<FileSystemEntity> allFiles = [];
 
-    // Recursively collect all files, safely skipping unaccessible folders
     void safeCollectFiles(Directory dir) {
       try {
         for (var entity in dir.listSync(recursive: false)) {
           if (entity is File) {
             allFiles.add(entity);
           } else if (entity is Directory) {
-            safeCollectFiles(entity); // recurse safely
+            safeCollectFiles(entity);
           }
         }
       } catch (e) {

@@ -20,11 +20,11 @@ import 'note_utils.dart';
 
 class FileManager extends StatefulWidget {
   final bool showCancelBtn;
-  final bool updateFolderPath; // NEW
-  final List<String> selectedPaths; // Files/folders to move
+  final bool updateFolderPath;
+  final List<String> selectedPaths;
   final bool enableFolderSelection;
-  final VoidCallback? onFilesMoved; // Add this
-  final bool isDestinationSelection; // Add this
+  final VoidCallback? onFilesMoved;
+  final bool isDestinationSelection;
 
   final void Function(String folderPath)? onFolderSelected;
 
@@ -37,38 +37,39 @@ class FileManager extends StatefulWidget {
 
 class _FileManagerState extends State<FileManager> {
   TreeViewController? _treeViewController = TreeViewController(children: []);
-  bool _isFolderSelectionMode = false; // When true, user is selecting destination
-  String? _destinationFolderPath; // The folder to which files will be moved
+  bool _isFolderSelectionMode = false;
+  String? _destinationFolderPath;
 
 
   late final CameraDescription camera;
   final ValueNotifier<String> _searchQuery = ValueNotifier<String>('');
 
-  bool _isSearching = false; // To toggle search interface
+  bool _isSearching = false;
   final TextEditingController _searchController = TextEditingController();
-  List<Node> _originalNodes = []; // Store the original full list
+  List<Node> _originalNodes = [];
   late Key _treeKey = UniqueKey();
   bool _isMoveMode = false;
   String? _moveSourcePath;
   List<String> _selectedForMove = [];
-   String rootPath = "/storage/emulated/0"; // Or whichever base dir is correct
+   String rootPath = "/storage/emulated/0";
 
   List<IndexedEntry> _allIndexedEntries = [];
 
   List<String> expandedFolders = [];
   bool _expandedFoldersLoaded = false;
+  bool _searchInProgress = false;
 
   bool isLoading = true;
   final Set<String> loadedFolders = {};
   String?
       _targetMediaFolderPath;
-  bool _okPressed = false; // Add this to your state
-  final String defaultFolderPath = folderPathNotifier.value; // Save default once on init
+  bool _okPressed = false;
+  final String defaultFolderPath = folderPathNotifier.value;
   final Map<String, List<Node>> folderContentsCache = {};
 
   final ScrollController _scrollController = ScrollController();
   List<Node<dynamic>> _filteredNodes = [];
-  List<Node> _fullTreeNodes = []; // Store preloaded tree here for global search
+  List<Node> _fullTreeNodes = [];
   bool _isMultiSelectMode = false;
   Set<String> _selectedFilePaths = {};
   File? _selectedFile;
@@ -104,13 +105,9 @@ class _FileManagerState extends State<FileManager> {
     folderPathNotifier.addListener(_handleFolderPathChange);
     _searchQuery.addListener(_handleSearchChange);
 
-    IndexManager.instance.indexFileSystemRecursively("/storage/emulated/0").then((_) {
-      print("✅ Index ready.");
-      isIndexing.value = false;
-      _handleSearchChange();
-    });
-    // final rootPath = "/storage/emulated/0";
-    // NoteUtils.loadAllNotes(rootPath);
+
+    _initializeIndexAndSearch();
+
   }
 
   @override
@@ -121,130 +118,6 @@ class _FileManagerState extends State<FileManager> {
   }
 
 
-  /// NO USE ----------------- NO USE -------------------- NO USE -----------------------
-  Future<void> indexFileSystemRecursively(String rootPath) async {
-    _allIndexedEntries.clear();
-
-    int folderCount = 0;
-    int fileCount = 0;
-
-    Future<void> scan(String dirPath) async {
-      final dir = Directory(dirPath);
-      if (!await dir.exists()) return;
-
-      try {
-        final entities = dir.listSync();
-
-        for (final entity in entities) {
-          final path = entity.path;
-          final name = p.basename(path);
-          final isFolder = entity is Directory;
-
-          // ✅ Skip restricted or unwanted paths
-          if (_shouldSkipPath(path)) continue;
-
-          _allIndexedEntries.add(IndexedEntry(
-            path: path,
-            name: name,
-            parentPath: dirPath,
-            isFolder: isFolder,
-          ));
-
-          if (isFolder) {
-            print("📁 Folder [${_allIndexedEntries.length}]: $path");
-            await scan(path);
-          }
-        }
-      } catch (e) {
-        print("❌ Skipped inaccessible directory: $dirPath");
-        print("   Reason: $e");
-      }
-    }
-
-    print("🔍 Starting recursive scan at: $rootPath");
-    final stopwatch = Stopwatch()..start();
-    await scan(rootPath);
-    stopwatch.stop();
-    print("✅ Indexing complete. ${_allIndexedEntries.length} total entries "
-        "(${folderCount} folders, ${fileCount} files) in ${stopwatch.elapsed.inSeconds}s.");
-  }
-  /// NO USE ----------------- NO USE -------------------- NO USE -----------------------
-  bool _shouldSkipPath(String path) {
-    final lower = path.toLowerCase();
-
-    return lower.contains("/android/data") ||
-        lower.contains("/android/obb") ||
-        lower.contains("/miui") ||
-        lower.contains("/secure") ||
-        lower.contains("/data/user") ||
-        lower.contains("/.thumbnails");
-  }
-  /// NO USE ----------------- NO USE -------------------- NO USE -----------------------
-  List<Node<dynamic>> _buildTreeForMatches(String query) {
-    final matches = _allIndexedEntries
-        .where((e) => e.name.toLowerCase().contains(query.toLowerCase()))
-        .toList();
-
-    final Map<String, Node<dynamic>> nodeMap = {};
-    final Set<String> requiredPaths = {};
-
-    // Collect all parent paths of matches
-    for (final match in matches) {
-      String? currentPath = match.path;
-      while (currentPath!.isNotEmpty) {
-        requiredPaths.add(currentPath);
-        final parent = _allIndexedEntries
-            .firstWhere((e) => e.path == currentPath,
-            orElse: () => IndexedEntry(
-                path: '', name: '', parentPath: '', isFolder: true))
-            .parentPath;
-        currentPath = parent.isNotEmpty ? parent : '';
-      }
-    }
-
-    // Build Node map
-    for (final entry in _allIndexedEntries
-        .where((e) => requiredPaths.contains(e.path))) {
-      nodeMap[entry.path] = Node(
-        key: entry.path,
-        label: entry.name,
-        data: {'isFile': !entry.isFolder},
-        children: [],
-        expanded: true,
-      );
-    }
-
-    // Attach children to their parents
-    for (final entry in _allIndexedEntries
-        .where((e) => requiredPaths.contains(e.path))) {
-      final node = nodeMap[entry.path]!;
-      final parent = nodeMap[entry.parentPath];
-      if (parent != null) {
-        parent.children!.add(node);
-      }
-    }
-
-    // Return top-level nodes
-    // final roots = nodeMap.values
-    //     .where((n) => !_allIndexedEntries.any(
-    //         (e) => e.path == n.key && requiredPaths.contains(e.parentPath)))
-    //     .toList();
-    final roots = nodeMap.values
-        .where((n) => !_allIndexedEntries.any((e) => e.path == n.key && nodeMap.containsKey(e.parentPath)))
-        .toList();
-
-    return roots;
-  }
-
-
-  // Future<void> _loadExpandedFolders() async {
-  //   final prefs = await SharedPreferences.getInstance();
-  //   final storedList = prefs.getStringList('expandedFolders');
-  //   if (storedList != null) {
-  //     expandedFolders = storedList.toSet();
-  //   }
-  // }
-
 
   Future<List<String>> loadExpandedFolders() async {
     final prefs = await SharedPreferences.getInstance();
@@ -253,21 +126,63 @@ class _FileManagerState extends State<FileManager> {
 
 
 
+  Future<void> _initializeIndexAndSearch() async {
+    final cachedEntries = await IndexManager.instance.loadIndexFromDisk();
+    if (cachedEntries.isNotEmpty) {
+      IndexManager.instance.setEntries(cachedEntries);
+      isIndexing.value = false;
+      _handleSearchChange();
+    }
+
+
+    IndexManager.instance.indexFileSystemRecursively("/storage/emulated/0").then((_) async {
+      print("✅ Index ready.");
+      isIndexing.value = false;
+      _handleSearchChange();
+      await IndexManager.instance.saveIndexToDisk();
+    });
+  }
+
 
 
 
 
   void _handleSearchChange() {
     final query = _searchQuery.value.trim().toLowerCase();
+
     if (query.isEmpty) {
-      setState(() => _filteredNodes = _treeViewController!.children);
+      setState(() {
+        _searchInProgress = false;
+        _filteredNodes = _treeViewController!.children;
+      });
+      return;
+    }
+
+    if (isIndexing.value) {
+      setState(() {
+        _searchInProgress = true;
+        _filteredNodes = [];
+      });
+
+      Future.doWhile(() async {
+        await Future.delayed(Duration(milliseconds: 500));
+        if (!isIndexing.value) {
+          final matches = IndexManager.instance.search(query);
+          setState(() {
+            _searchInProgress = false;
+            _filteredNodes = buildSearchTree(matches);
+          });
+          return false;
+        }
+        return true;
+      });
+
       return;
     }
 
     final matches = IndexManager.instance.search(query);
-
-    // You must convert these IndexedEntry → Node tree
     setState(() {
+      _searchInProgress = false;
       _filteredNodes = buildSearchTree(matches);
     });
   }
@@ -277,9 +192,8 @@ class _FileManagerState extends State<FileManager> {
     final Map<String, Node> nodeMap = {};
 
     for (final entry in matches) {
-      // Get relative path
       final relativePath = entry.path.replaceFirst(basePath, '').replaceAll(RegExp(r'^/'), '');
-      final parts = p.split(relativePath); // use path segments without root
+      final parts = p.split(relativePath);
       String currentPath = basePath;
       Node? parent;
 
@@ -289,7 +203,7 @@ class _FileManagerState extends State<FileManager> {
         if (!nodeMap.containsKey(currentPath)) {
           final newNode = Node(
             key: currentPath,
-            label: part, // 🟢 Show only part, not full path
+            label: part,
             children: [],
             expanded: true,
             data: {'isFile': !entry.isFolder},
@@ -305,7 +219,6 @@ class _FileManagerState extends State<FileManager> {
       }
     }
 
-    // Return only root-level nodes
     return nodeMap.values
         .where((node) => !nodeMap.values.any((n) => n.children!.contains(node)))
         .toList();
@@ -337,7 +250,7 @@ class _FileManagerState extends State<FileManager> {
   Future<void> _initializeTree(String fullPath) async {
     setState(() => isLoading = true);
     await requestStoragePermission();
-    _targetMediaFolderPath = fullPath; // Set the target media folder
+    _targetMediaFolderPath = fullPath;
 
     if (!_expandedFoldersLoaded) {
       List<String> savedExpanded = await loadExpandedFolders();
@@ -347,15 +260,7 @@ class _FileManagerState extends State<FileManager> {
     }
 
     await _refreshTree(fullPath);
-    // _preloadFullTree();
 
-  }
-
-  Future<void> _preloadFullTree() async {
-    final rootDir = Directory("/storage/emulated/0");
-    final allNodes = await _loadFolderTreeRecursively(rootDir.path);
-    if (!mounted) return;
-    _filteredNodes = allNodes; // Save for search use
   }
 
 
@@ -367,9 +272,8 @@ class _FileManagerState extends State<FileManager> {
     try {
       entities = directory.listSync();
     } catch (e) {
-      // Permission denied or other IO exceptions
       debugPrint('⚠️ Skipping inaccessible folder: $path, error: $e');
-      return []; // skip this folder
+      return [];
     }
 
     final List<Node> children = [];
@@ -403,7 +307,6 @@ class _FileManagerState extends State<FileManager> {
   Future<void> _refreshTree(String path) async {
     if (!mounted) return;
 
-    // Clear and rebuild expanded folders
     if (!_expandedFoldersLoaded) {
       expandedFolders.clear();
       List<String> parts = path.split('/');
@@ -438,7 +341,7 @@ class _FileManagerState extends State<FileManager> {
     setState(() {
       _isMoveMode = true;
       _moveSourcePath = sourcePath;
-      _selectedForMove = [sourcePath]; // Support single item move
+      _selectedForMove = [sourcePath];
     });
 
     Fluttertoast.showToast(msg: "selectDestinationFromTree".tr);
@@ -454,10 +357,8 @@ class _FileManagerState extends State<FileManager> {
 
 
   Future<void> _confirmAndMove(String destinationPath) async {
-    // Clear any existing snackbars
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
 
-    // Show persistent snackbar with confirmation
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Column(
@@ -474,22 +375,15 @@ class _FileManagerState extends State<FileManager> {
               ),
             ),
             SizedBox(height: 4),
-            // Text(
-            //   "This operation cannot be undone".tr,
-            //   style: TextStyle(fontSize: 12),
-            // ),
+
           ],
         ),
-        duration: Duration(minutes: 3), // Persistent until dismissed
+        duration: Duration(minutes: 3),
         action: SnackBarAction(
           label: 'moveFolder'.tr,
           onPressed: () async {
             await _executeMoveOperation(destinationPath);
-            // if (widget.onFilesMoved != null) {
-            //   widget.onFilesMoved!();
-            // }
-            //
-            // Navigator.of(context).pop(true);
+
             ScaffoldMessenger.of(context).hideCurrentSnackBar();
           },
         ),
@@ -503,13 +397,11 @@ class _FileManagerState extends State<FileManager> {
     setState(() => isLoading = true);
 
     try {
-      // Track affected paths for refresh
       final affectedPaths = <String>{
-        p.dirname(_selectedForMove.first), // Source parent
-        destinationPath                    // Destination
+        p.dirname(_selectedForMove.first),
+        destinationPath
       };
 
-      // Perform moves
       for (var sourcePath in _selectedForMove) {
         final isDirectory = Directory(sourcePath).existsSync();
         final isFile = File(sourcePath).existsSync();
@@ -519,7 +411,7 @@ class _FileManagerState extends State<FileManager> {
         final itemName = p.basename(sourcePath);
         final newPath = p.join(destinationPath, itemName);
 
-        // Ensure destination exists
+
         await Directory(destinationPath).create(recursive: true);
 
         if (isDirectory) {
@@ -529,36 +421,27 @@ class _FileManagerState extends State<FileManager> {
         }
       }
 
-      // Wait for filesystem changes
       await Future.delayed(Duration(milliseconds: 500));
 
-      // Refresh affected paths
-      // for (var path in affectedPaths) {
-      //   if (await Directory(path).exists()) {
-      //     await refreshTreeView();
-      //   }
-      // }
 
-      Navigator.push(
+      Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (context) => MainScreen(
-            dateFormatNotifier: dateFormatNotifier,
-            timeFormatNotifier: timeFormatNotifier,
-            camera: camera,
+          builder: (context) => FileManager(
+            selectedPaths: [],
+            enableFolderSelection: false,
           ),
         ),
       );
+      setState(() {});
 
       if (widget.onFilesMoved != null) {
         widget.onFilesMoved!();
       }
 
-      // Navigator.of(context).pop(true); // Return succes
       Fluttertoast.showToast(msg: "itemsMovedSuccess".tr);
     } catch (e) {
       debugPrint('Move error: $e');
-      Fluttertoast.showToast(msg: "Move failed: ${e.toString()}".tr);
     } finally {
       if (mounted) {
         setState(() {
@@ -584,21 +467,17 @@ class _FileManagerState extends State<FileManager> {
 
   Future<void> _moveDirectory(Directory source, Directory destination) async {
     try {
-      // First try simple rename (fastest if on same filesystem)
       await source.rename(destination.path);
       debugPrint('Directory renamed successfully');
     } catch (e) {
       debugPrint('Rename failed, trying copy+delete: $e');
-      // Fallback to copy-then-delete if rename fails
       await _copyDirectory(source, destination);
 
-      // Verify all files were copied before deleting source
       final copiedFiles = await Directory(destination.path).list().toList();
       if (copiedFiles.isEmpty) {
         throw Exception('No files were copied to destination');
       }
 
-      // Delete source only after successful copy
       await source.delete(recursive: true);
       debugPrint('Directory moved via copy+delete');
     }
@@ -621,7 +500,6 @@ class _FileManagerState extends State<FileManager> {
       }
     } catch (e) {
       debugPrint('Copy directory error: $e');
-      // Clean up partially copied directory
       if (await destination.exists()) {
         await destination.delete(recursive: true);
       }
@@ -639,12 +517,7 @@ class _FileManagerState extends State<FileManager> {
       final path = targetPath ?? folderPathNotifier.value;
       final rootDir = Directory(path);
 
-      // Preserve currently expanded folders that still exist
-      // final preservedExpanded = expandedFolders.where((path) => Directory(path).existsSync()).toList();
-      // expandedFolders.clear();
-      // expandedFolders.addAll(preservedExpanded);
 
-      // Rebuild tree with proper loading states
       final List<Node<dynamic>> nodes = await _buildFileTree(Directory(path));
 
       if (mounted) {
@@ -655,7 +528,6 @@ class _FileManagerState extends State<FileManager> {
           );
           isLoading = false;
         });
-        // Force rebuild with new UniqueKey if needed
         _treeKey = UniqueKey();
       }
     } catch (e) {
@@ -675,7 +547,6 @@ class _FileManagerState extends State<FileManager> {
     try {
       final entities = await directory.list().toList();
 
-      // Process directories first
       final folders = entities.whereType<Directory>()
           .where((d) => !d.path.startsWith('.'));
 
@@ -683,13 +554,13 @@ class _FileManagerState extends State<FileManager> {
         final shouldExpand = expandedFolders.contains(folder.path);
         final List<Node<dynamic>> children = shouldExpand
             ? await _buildFileTree(folder)
-            : <Node<dynamic>>[];  // Explicitly typed empty list
+            : <Node<dynamic>>[];
 
         nodes.add(Node<dynamic>(
           key: folder.path,
           label: p.basename(folder.path),
           expanded: shouldExpand,
-          children: children,  // Now properly typed
+          children: children,
           icon: _isMoveMode && !_selectedForMove.contains(folder.path)
               ? Icons.folder_special
               : Icons.folder,
@@ -701,7 +572,6 @@ class _FileManagerState extends State<FileManager> {
         ));
       }
 
-      // Process files
       final files = entities.where((e) => !e.path.startsWith('.') && _isMediaFile(e.path));
       for (var file in files) {
         nodes.add(Node<dynamic>(
@@ -711,7 +581,6 @@ class _FileManagerState extends State<FileManager> {
         ));
       }
 
-      // Sort folders first, then files
       nodes.sort((a, b) {
         final aIsFolder = a.children != null;
         final bIsFolder = b.children != null;
@@ -728,184 +597,6 @@ class _FileManagerState extends State<FileManager> {
   }
 
 
-
-  // Future<List<Node>> _loadFolderContents(String folderPath) async {
-  //   if (loadedFolders.contains(folderPath)) return [];
-  //   loadedFolders.add(folderPath);
-  //
-  //   final dir = Directory(folderPath);
-  //   List<Node> nodes = [];
-  //
-  //   final stopwatch = Stopwatch()..start();
-  //   bool toastShown = false;
-  //
-  //   try {
-  //     final entities = dir.listSync();
-  //     final mediaFiles = <FileSystemEntity>[];
-  //     final folders = <FileSystemEntity>[];
-  //
-  //     for (var entity in entities) {
-  //       if (entity is Directory) {
-  //         folders.add(entity);
-  //       } else if (_isMediaFile(entity.path)) {
-  //         mediaFiles.add(entity);
-  //       }
-  //     }
-  //
-  //     // Add folders first
-  //     for (var folder in folders) {
-  //       nodes.add(Node(
-  //         key: folder.path,
-  //         label: folder.path.split('/').last,
-  //         // Don't add empty children!
-  //         expanded: false,
-  //         data: {'loaded': false},
-  //       ));
-  //     }
-  //
-  //
-  //     // Show temporary "Loading..." indicator
-  //     if (mediaFiles.isNotEmpty) {
-  //       nodes.add(Node(
-  //         key: '$folderPath/__loading__',
-  //         label: 'Loading...',
-  //         data: {'isLoading': true},
-  //       ));
-  //     }
-  //
-  //
-  //     // Update UI immediately to show folders and loading message
-  //     setState(() {
-  //       _treeViewController = _treeViewController!.copyWith(
-  //         children: _updateNodeChildren(_treeViewController!.children, folderPath, nodes),
-  //       );
-  //     });
-  //
-  //     // Show toast after 1.5 seconds only if still loading
-  //     Future.delayed(Duration(milliseconds: 1500), () {
-  //       if (stopwatch.isRunning && !toastShown) {
-  //         toastShown = true;
-  //         Fluttertoast.showToast(msg: "Opening folder, please wait...");
-  //       }
-  //     });
-  //
-  //     // Load media in batches and update the tree node incrementally
-  //     const batchSize = 20;
-  //     List<Node> mediaNodes = [];
-  //
-  //     for (int i = 0; i < mediaFiles.length; i += batchSize) {
-  //       final batch = mediaFiles.skip(i).take(batchSize);
-  //
-  //       for (var file in batch) {
-  //         mediaNodes.add(Node(
-  //           key: file.path,
-  //           label: file.path.split('/').last,
-  //           data: {'isFile': true},
-  //         ));
-  //       }
-  //
-  //       // Replace the current children with folders + loaded media files + "Loading..." (if not last batch)
-  //       List<Node> updatedChildren = [
-  //         ...nodes.where((n) => !(n.data?['isLoading'] == true)),
-  //         ...mediaNodes,
-  //       ];
-  //
-  //       if (i + batchSize < mediaFiles.length) {
-  //         updatedChildren.add(Node(
-  //           key: '$folderPath/__loading__',
-  //           label: 'Loading...',
-  //           data: {'isLoading': true},
-  //         ));
-  //       }
-  //
-  //       setState(() {
-  //         _treeViewController = _treeViewController!.copyWith(
-  //           children: _updateNodeChildren(
-  //             _treeViewController!.children,
-  //             folderPath,
-  //             updatedChildren,
-  //             isLoaded: false, // still loading
-  //           ),
-  //         );
-  //       });
-  //
-  //       await Future.delayed(Duration(milliseconds: 100));
-  //     }
-  //
-  //   } catch (e) {
-  //     print("Error loading folder $folderPath: $e");
-  //   } finally {
-  //     stopwatch.stop();
-  //
-  //     // Final update to remove loading node and mark as loaded
-  //     List<Node> finalChildren = [
-  //       ...nodes.where((n) => !(n.data?['isLoading'] == true)),
-  //     ];
-  //
-  //     setState(() {
-  //       _treeViewController = _treeViewController!.copyWith(
-  //         children: _updateNodeChildren(
-  //           _treeViewController!.children,
-  //           folderPath,
-  //           finalChildren,
-  //           isLoaded: true,
-  //         ),
-  //       );
-  //     });
-  //   }
-  //
-  //   return [];
-  // }
-
-  // ─────────────────────────────────────────────────────────────────────────────
-// 2) _loadFolderContents: returns “List<Node>” (folders first, then media files)
-// ─────────────────────────────────────────────────────────────────────────────
-
-  // Future<List<Node>> _loadFolderContents(String folderPath) async {
-  //   // If we've already loaded once, return the cached copy (to avoid re-scanning):
-  //   if (folderContentsCache.containsKey(folderPath)) {
-  //     return folderContentsCache[folderPath]!;
-  //   }
-  //
-  //   final dir = Directory(folderPath);
-  //   final children = <Node>[];
-  //
-  //   try {
-  //     // 1) List directories and media files
-  //     final entities = dir.listSync();
-  //
-  //     // First, collect subfolders
-  //     for (final entity in entities) {
-  //       if (entity is Directory) {
-  //         children.add(Node(
-  //           key: entity.path,
-  //           label: entity.path.split('/').last,
-  //           expanded: false,
-  //           children: <Node>[],
-  //           data: {'loaded': false},
-  //         ));
-  //       }
-  //     }
-  //
-  //     // Next, collect media files (jpg, png, mp4, etc.)
-  //     for (final entity in entities) {
-  //       if (entity is File && _isMediaFile(entity.path)) {
-  //         children.add(Node(
-  //           key: entity.path,
-  //           label: entity.path.split('/').last,
-  //           children: <Node>[], // leaf nodes have no children
-  //           data: {'isFile': true},
-  //         ));
-  //       }
-  //     }
-  //   } catch (e) {
-  //     print("Error loading folder contents for $folderPath: $e");
-  //   }
-  //
-  //   // Cache them so we don’t rescan next time:
-  //   folderContentsCache[folderPath] = children;
-  //   return children;
-  // }
 
 
   Future<List<Node>> _loadFolderContents(String path) async {
@@ -925,7 +616,6 @@ class _FileManagerState extends State<FileManager> {
       for (final entity in entities) {
         final entityPath = entity.path;
 
-        /// for loading... node    for loading... node    for loading... node    for loading... node    for loading... node    for loading... node    for loading... node    for loading... node
 
         if (mediaFiles.isNotEmpty) {
           children.add(Node(
@@ -954,7 +644,6 @@ class _FileManagerState extends State<FileManager> {
         }
       }
 
-      // Also check again if the parsed `children` list is empty (e.g., only non-media files present)
       if (children.isEmpty) {
         Fluttertoast.showToast(msg: "folderIsEmpty".tr);
       }
@@ -967,238 +656,7 @@ class _FileManagerState extends State<FileManager> {
     return children;
   }
 
-  //before empty folder toast
-  // Future<List<Node>> _loadFolderContents(String path) async {
-  //   final dir = Directory(path);
-  //   final List<Node> children = [];
-  //
-  //   try {
-  //     final entities = dir.listSync();
-  //
-  //     for (final entity in entities) {
-  //       final entityPath = entity.path;
-  //
-  //       if (entity is Directory) {
-  //         children.add(Node(
-  //           key: entityPath,
-  //           label: entityPath.split('/').last,
-  //           children: [],
-  //           expanded: false,
-  //           data: {'loaded': false},
-  //         ));
-  //       } else if (_isMediaFile(entityPath)) {
-  //         children.add(Node(
-  //           key: entityPath,
-  //           label: entityPath.split('/').last,
-  //           data: {'isFile': true},
-  //         ));
-  //       }
-  //     }
-  //   } catch (e) {
-  //     print('❌ Error loading contents for $path: $e');
-  //   }
-  //
-  //   return children;
-  // }
 
-
-  // Future<List<Node>> _loadFolderContents(String folderPath) async {
-  //   // ✅ Return cached contents if already loaded
-  //   if (folderContentsCache.containsKey(folderPath)) {
-  //     print("📦 Using cached contents for: $folderPath");
-  //     return folderContentsCache[folderPath]!;
-  //   }
-  //
-  //   // ✅ Mark folder as loaded
-  //   loadedFolders.add(folderPath);
-  //   final dir = Directory(folderPath);
-  //   List<Node> nodes = [];
-  //
-  //   try {
-  //     final entities = dir.listSync();
-  //
-  //     for (var entity in entities) {
-  //       if (entity is Directory) {
-  //         nodes.add(Node(
-  //           key: entity.path,
-  //           label: entity.path.split('/').last,
-  //           children: [],
-  //           data: {'loaded': false},
-  //         ));
-  //       } else if (_isMediaFile(entity.path)) {
-  //         nodes.add(Node(
-  //           key: entity.path,
-  //           label: entity.path.split('/').last,
-  //           data: {'isFile': true},
-  //         ));
-  //       }
-  //     }
-  //
-  //     // ✅ Cache the loaded nodes
-  //     folderContentsCache[folderPath] = nodes;
-  //   } catch (e) {
-  //     print("❌ Error loading folder $folderPath: $e");
-  //   }
-  //
-  //   return nodes;
-  // }
-
-  // 5 june 2025 - before last requirements
-  // Future<List<Node>> _loadFolderContents(String folderPath) async {
-  //   if (loadedFolders.contains(folderPath)) return [];
-  //   loadedFolders.add(folderPath);
-  //
-  //   final dir = Directory(folderPath);
-  //   List<Node> nodes = [];
-  //   final isTargetFolder = folderPath == _targetMediaFolderPath;
-  //
-  //   try {
-  //     final entities = dir.listSync();
-  //
-  //     for (var entity in entities) {
-  //       if (entity is Directory) {
-  //         nodes.add(Node(
-  //           key: entity.path,
-  //           label: entity.path.split('/').last,
-  //           children: [],
-  //           data: {'loaded': false},
-  //         ));
-  //       } else if (isTargetFolder && _isMediaFile(entity.path)) {
-  //         // ONLY add media files if this is the exact target folder
-  //         nodes.add(Node(
-  //           key: entity.path,
-  //           label: entity.path.split('/').last,
-  //           data: {'isFile': true},
-  //         ));
-  //       }
-  //     }
-  //   } catch (e) {
-  //     print("Error loading folder $folderPath: $e");
-  //   }
-  //
-  //   return nodes;
-  // }
-
-
-
-//22/06/2025 - after languge trans
-//   Widget _nodeBuilder(BuildContext context, Node node) {
-//     final isFolder = Directory(node.key).existsSync();
-//     final data = node.data;
-//
-//     if (node.data is Map && (node.data as Map)['isLoading'] == true) {
-//
-//       return Padding(
-//         padding: const EdgeInsets.only(left: 36.0),
-//         child: Row(
-//           children:  [
-//             SizedBox(
-//               width: 16,
-//               height: 16,
-//               child: CircularProgressIndicator(strokeWidth: 2),
-//             ),
-//             SizedBox(width: 8),
-//             Text("loading".tr),
-//           ],
-//         ),
-//       );
-//     }
-//     final isFile = data is Map && data['isFile'] == true;
-//     final isSelected = _treeViewController!.selectedKey == node.key;
-//
-//     return GestureDetector(
-//       behavior: HitTestBehavior.opaque,
-//
-//         onTap: () {
-//           if (isFile) {
-//             if (_isMultiSelectMode) {
-//               setState(() {
-//                 if (_selectedFilePaths.contains(node.key)) {
-//                   _selectedFilePaths.remove(node.key);
-//                 } else {
-//                   _selectedFilePaths.add(node.key);
-//                 }
-//               });
-//             } else {
-//               FileUtils.showPopupMenu(
-//                 context,
-//                 File(node.key),
-//                 camera,
-//                 null,
-//                 onFileChanged: () => _reloadFileParent(node.key),
-//                 onEnterMultiSelectMode: () {
-//                   setState(() {
-//                     _isMultiSelectMode = true;
-//                     _selectedFilePaths.add(node.key);
-//                   });
-//                 },
-//               );
-//             }
-//           } else {
-//             // Folder tap logic
-//             _handleNodeTap(node.key);
-//             setState(() {
-//               selectedFolderPathNotifier.value = node.key;
-//               _treeViewController = _treeViewController!.copyWith(
-//                 selectedKey: node.key,
-//               );
-//             });
-//           }
-//         },
-//         onLongPress: () {
-//         if (isFolder) _showFolderOptions(node.key);
-//       },
-//       onDoubleTap: () => _handleNodeDoubleTap(node),
-//       child: Container(
-//         padding: const EdgeInsets.symmetric(vertical: 4, horizontal: 6),
-//         color: isSelected ? Colors.blueGrey.shade100 : null,
-//         decoration: BoxDecoration(
-//           color: isSelected ? Colors.blueGrey.shade100 : null,
-//           // borderRadius: BorderRadius.circular(4),
-//         ),
-//         child: Row(
-//           children: [
-//             if (isFolder)
-//               Icon(
-//                 node.expanded ? Icons.arrow_drop_down : Icons.arrow_right,
-//                 size: 24,
-//                 color: Colors.grey,
-//               )
-//             else
-//               const SizedBox(width: 24),
-//
-//             const SizedBox(width: 4),
-//             Icon(
-//               isFolder ? Icons.folder : Icons.insert_drive_file,
-//               color: isFolder ? Colors.amber : Colors.grey,
-//             ),
-//             const SizedBox(width: 8),
-//             Expanded(
-//               child: Row(
-//                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
-//                 children: [
-//                   Text(
-//                     node.label,
-//                     overflow: TextOverflow.ellipsis,
-//                   ),
-//                   if (!isFolder)
-//                     ValueListenableBuilder<Map<String, String>>(
-//                       valueListenable: mediaNotesNotifier,
-//                       builder: (context, mediaNotes, _) {
-//                         final hasNote = mediaNotes.containsKey(node.key);
-//                         return hasNote
-//                             ? Icon(Icons.article, color: Colors.orange)
-//                             : const SizedBox.shrink();
-//                       },
-//                     ),
-//                 ],
-//               ),
-//             ),
-//           ],
-//         ),
-//       ),
-//     );
-//   }
 
 
   Widget _nodeBuilder(BuildContext context, Node node) {
@@ -1262,7 +720,6 @@ class _FileManagerState extends State<FileManager> {
             );
           }
         } else {
-          // Folder tap logic
           _handleNodeTap(node.key);
           setState(() {
             selectedFolderPathNotifier.value = node.key;
@@ -1304,8 +761,9 @@ class _FileManagerState extends State<FileManager> {
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
                   Text(
-                    node.label,
+                    node.label.length > 22 ? '${node.label.substring(0, 22)}...' : node.label,
                     overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
                   ),
                   if (!isFolder)
                     ValueListenableBuilder<Map<String, String>>(
@@ -1395,7 +853,7 @@ class _FileManagerState extends State<FileManager> {
         print("🔵 inserting loading node for ${node.key}");
 
         return node.copyWith(
-          children: [...newChildren], // Replace children with new list
+          children: [...newChildren],
           expanded: shouldExpand,
           data: {
             ...(node.data is Map ? node.data as Map : {}),
@@ -1439,7 +897,7 @@ class _FileManagerState extends State<FileManager> {
       return;
     }
     if (_isMultiSelectMode && isAwaitingMultiFileMove && isFolder) {
-      await _expandFolderForMove(key); // If you want to auto-expand
+      await _expandFolderForMove(key);
 
       ProgressDialog.show(context, _selectedFilePaths.length);
 
@@ -1452,7 +910,6 @@ class _FileManagerState extends State<FileManager> {
           ProgressDialog.updateProgress(completed, _selectedFilePaths.length);
         }
 
-        // Fluttertoast.showToast(msg: "Moved ${_selectedFilePaths.length} files".tr);
 
         mediaReloadNotifier.value++;
 
@@ -1464,18 +921,18 @@ class _FileManagerState extends State<FileManager> {
         setState(() {
           isAwaitingMultiFileMove = false;
         });
+
         _exitMultiSelectMode();
-        Navigator.push(
+        Navigator.pushReplacement(
           context,
           MaterialPageRoute(
-            builder: (context) => MainScreen(
-              dateFormatNotifier: dateFormatNotifier,
-              timeFormatNotifier: timeFormatNotifier,
-              camera: camera,
+            builder: (context) => FileManager(
+              selectedPaths: [],
+              enableFolderSelection: false,
             ),
           ),
         );
-
+        setState(() {});
         return;
       }
     }
@@ -1489,7 +946,6 @@ class _FileManagerState extends State<FileManager> {
       return;
     }
 
-    // ✅ Double-tap → open FolderMediaViewer directly
     if (isDoubleTap && isFolder) {
       _openFolderMediaViewer(key);
       return;
@@ -1497,100 +953,7 @@ class _FileManagerState extends State<FileManager> {
 
     final isCurrentlyExpanded = expandedFolders.contains(key);
 
-    // // 🔽 Collapse
-    // if (isCurrentlyExpanded) {
-    //   double? scrollOffset;
-    //   if (_scrollController.hasClients) {
-    //     scrollOffset = _scrollController.offset;
-    //   }
-    //
-    //
-    //   final loadingNode = Node(
-    //     key: '$key/__loading__',
-    //     label: 'Loading...',
-    //     data: {'isLoading': true},
-    //   );
-    //
-    //
-    //   setState(() {
-    //     _treeViewController = _treeViewController!.copyWith(
-    //       children: _updateNodeChildren(
-    //         _treeViewController!.children,
-    //         key,
-    //         [loadingNode],
-    //         isLoaded: false,
-    //         forceExpand: true,
-    //       ),
-    //       selectedKey: key,
-    //     );
-    //   });
-    //   expandedFolders.add(key);
-    //
-    //   await saveExpandedFolders(expandedFolders);
-    //   return;
-    // }
-    //
-    // // 🔼 Expand
-    //
-    //
-    // // expandedFolders.add(key);
-    //
-    //
-    //
-    // // ✅ Save scroll position safely if attached
-    // double? scrollOffset;
-    // if (_scrollController.hasClients) {
-    //   scrollOffset = _scrollController.offset;
-    // }
-    //
-    //   // 🌀 Show loading placeholder if needed
-    //
-    //
-    //   _treeKey = UniqueKey();
-    // _handleExpansionToggle(key);
-    //
-    // // setState(() {
-    //
-    //
-    //     // _treeViewController = _treeViewController!.copyWith(
-    //     //   children: _updateNodeChildren(
-    //     //     _treeViewController!.children,
-    //     //     key,
-    //     //     [loadingNode],
-    //     //     isLoaded: false,
-    //     //     forceExpand: true,
-    //     //   ),
-    //     //   selectedKey: key,
-    //     // );
-    //
-    //
-    //   // });
-    //
-    //
-    // // ✅ Restore scroll offset after short delay
-    // await Future.delayed(const Duration(milliseconds: 20));
-    // if (_scrollController.hasClients && scrollOffset != null) {
-    //   _scrollController.jumpTo(scrollOffset);
-    // }
-    //
-    // final children = await _loadFolderContents(key);
-    //
-    // if (widget.showCancelBtn) {
-    //   ScaffoldMessenger.of(context).hideCurrentSnackBar();
-    //   ScaffoldMessenger.of(context).showSnackBar(
-    //     SnackBar(
-    //       content: Text('selectedFolder $key'.tr),
-    //       duration: const Duration(days: 1),
-    //       action: SnackBarAction(
-    //         label: 'ok'.tr,
-    //         onPressed: () => _onOkPressed(key),
-    //       ),
-    //     ),
-    //   );
-    // }
-    // final isCurrentlyExpanded = expandedFolders.contains(key);
 
-    // 🔽 Collapse
     if (isCurrentlyExpanded) {
 
 
@@ -1605,20 +968,13 @@ class _FileManagerState extends State<FileManager> {
       return;
     }
 
-    // 🔼 Expand
 
-
-    // expandedFolders.add(key);
-
-
-
-    // ✅ Save scroll position safely if attached
     double? scrollOffset;
     if (_scrollController.hasClients) {
       scrollOffset = _scrollController.offset;
     }
 
-    // 🌀 Show loading placeholder if needed
+
     final loadingNode = Node(
       key: '$key/__loading__',
       label: 'Loading...',
@@ -1627,25 +983,7 @@ class _FileManagerState extends State<FileManager> {
     _treeKey = UniqueKey();
     _handleExpansionToggle(key);
 
-    // setState(() {
 
-
-    // _treeViewController = _treeViewController!.copyWith(
-    //   children: _updateNodeChildren(
-    //     _treeViewController!.children,
-    //     key,
-    //     [loadingNode],
-    //     isLoaded: false,
-    //     forceExpand: true,
-    //   ),
-    //   selectedKey: key,
-    // );
-
-
-    // });
-
-
-    // ✅ Restore scroll offset after short delay
     await Future.delayed(const Duration(milliseconds: 20));
     if (_scrollController.hasClients && scrollOffset != null) {
       _scrollController.jumpTo(scrollOffset);
@@ -1686,7 +1024,7 @@ class _FileManagerState extends State<FileManager> {
       return;
     }
 
-    // ✅ Replace loading with real content
+
     setState(() {
       _treeViewController = _treeViewController!.copyWith(
         children: _updateNodeChildren(
@@ -1700,7 +1038,7 @@ class _FileManagerState extends State<FileManager> {
       );
     });
 
-    // 🔁 Restore scroll again if needed
+
     await Future.delayed(const Duration(milliseconds: 10));
     if (_scrollController.hasClients && scrollOffset != null) {
       _scrollController.jumpTo(scrollOffset);
@@ -1708,12 +1046,9 @@ class _FileManagerState extends State<FileManager> {
   }
 
   Future<void> _expandFolderForMove(String path) async {
-    if (expandedFolders.contains(path)) return; // Already expanded
+    if (expandedFolders.contains(path)) return;
 
-    // expandedFolders.add(path);
-    // await saveExpandedFolders();
 
-    // Show loading state
     setState(() {
       _treeViewController = _treeViewController!.copyWith(
           children: _updateNodeChildren(
@@ -1725,7 +1060,7 @@ class _FileManagerState extends State<FileManager> {
       ));
     });
 
-    // Load actual contents
+
     final children = await _loadFolderContents(path);
 
     setState(() {
@@ -1768,8 +1103,7 @@ class _FileManagerState extends State<FileManager> {
 
   void _handleSnackBarOnBack() {
     if (!_okPressed && widget.showCancelBtn) {
-      // User pressed back without confirming,
-      // so keep the default path instead of selected one.
+
       _onOkPressed(defaultFolderPath);
     }
   }
@@ -1840,13 +1174,7 @@ class _FileManagerState extends State<FileManager> {
             leading: Icon(Icons.add),
             title: Text("open".tr),
             onTap: () async {
-
-              // Navigator.pop(context);
-              // final newPath = await _createNewFolder(folderPath);
-              // if (newPath != null) {
-              //   await IndexManager.instance.updateForNewFolder(newPath);
-              // }
-              Navigator.pop(context); // Close the bottom sheet if shown
+              Navigator.pop(context);
               _handleNodeDoubleTap(node);             },
           ),
           ListTile(
@@ -1925,9 +1253,9 @@ class _FileManagerState extends State<FileManager> {
       if (!newFolder.existsSync()) {
         try {
           newFolder.createSync(recursive: true);
-          loadedFolders.remove(parentFolderPath); // force reload
+          loadedFolders.remove(parentFolderPath);
 
-          // ✅ Reload UI with new folder
+
           List<Node> updatedChildren = await _loadFolderContents(parentFolderPath);
           List<Node> updatedNodes = _updateNodeChildren(
             _treeViewController!.children,
@@ -1960,7 +1288,7 @@ class _FileManagerState extends State<FileManager> {
       }
     }
 
-    return null; // If cancelled or error
+    return null;
   }
 
 
@@ -1988,14 +1316,14 @@ class _FileManagerState extends State<FileManager> {
         ProgressDialog.updateProgress(completed, _selectedFilePaths.length);
       }
 
-      // Fluttertoast.showToast(msg: "Deleted ${_selectedFilePaths.length} files".tr);
-      mediaReloadNotifier.value++; // Force tree refresh
+
+      mediaReloadNotifier.value++;
 
     } catch (e) {
       Fluttertoast.showToast(msg: "Error deleting files".tr);
     } finally {
       ProgressDialog.dismiss();
-      mediaReloadNotifier.value++; // Force tree refresh
+      mediaReloadNotifier.value++;
       _exitMultiSelectMode();
       Navigator.pushReplacement(
         context,
@@ -2033,14 +1361,14 @@ class _FileManagerState extends State<FileManager> {
         ProgressDialog.updateProgress(completed, _selectedFilePaths.length);
       }
 
-      // Fluttertoast.showToast(msg: "Duplicated ${_selectedFilePaths.length} files".tr);
-      mediaReloadNotifier.value++; // Force tree refresh
+
+      mediaReloadNotifier.value++;
 
     } catch (e) {
       Fluttertoast.showToast(msg: "Error duplicating files".tr);
     } finally {
       ProgressDialog.dismiss();
-      mediaReloadNotifier.value++; // Force tree refresh
+      mediaReloadNotifier.value++;
 
       _exitMultiSelectMode();
       Navigator.pushReplacement(
@@ -2068,6 +1396,7 @@ class _FileManagerState extends State<FileManager> {
     setState(() {
       isAwaitingMultiFileMove = true;
     });
+
   }
 
 
@@ -2138,7 +1467,7 @@ class _FileManagerState extends State<FileManager> {
             ),
             TextButton(
               onPressed: () {
-                Navigator.pop(context); // for 'move' — optional feature
+                Navigator.pop(context);
                 moveItem(folderPath);
               },
               child: Text('move'.tr),
@@ -2151,7 +1480,7 @@ class _FileManagerState extends State<FileManager> {
                   try {
                     Directory(folderPath).renameSync(renamedPath);
                     Fluttertoast.showToast(msg: "folderRenameSuccess".tr);
-                    Navigator.pop(context, renamedPath); // ✅ return renamed path
+                    Navigator.pop(context, renamedPath);
                   } catch (e) {
                     Fluttertoast.showToast(msg: "renameFailed".tr);
                     Navigator.pop(context); // just close
@@ -2166,8 +1495,8 @@ class _FileManagerState extends State<FileManager> {
     );
 
     if (newPath != null && newPath != folderPath) {
-      // ✅ Update UI like _createNewFolder does
-      loadedFolders.remove(parentDir); // force reload
+
+      loadedFolders.remove(parentDir);
 
       final updatedChildren = await _loadFolderContents(parentDir);
       final updatedNodes = _updateNodeChildren(
@@ -2201,7 +1530,6 @@ class _FileManagerState extends State<FileManager> {
     try {
       final normalizedPath = p.normalize(folderPath);
 
-      // ✅ Physically delete the folder
       final folder = Directory(normalizedPath);
       if (!folder.existsSync()) {
         Fluttertoast.showToast(msg: "folderNotFound".tr);
@@ -2210,10 +1538,8 @@ class _FileManagerState extends State<FileManager> {
 
       folder.deleteSync(recursive: true);
 
-      // ✅ Remove from loaded cache if used
       loadedFolders.remove(parentPath);
 
-      // ✅ Refresh parent folder
       final updatedChildren = await _loadFolderContents(parentPath);
 
       final updatedNodes = _updateNodeChildren(
@@ -2234,7 +1560,6 @@ class _FileManagerState extends State<FileManager> {
         );
       });
 
-      // ✅ Optionally remove from index
       IndexManager.instance.removeByPathPrefix(normalizedPath);
 
       Fluttertoast.showToast(msg: "folderDeleteSuccess".tr);
@@ -2288,10 +1613,10 @@ class _FileManagerState extends State<FileManager> {
   @override
   Widget build(BuildContext context) {
     if (_treeViewController == null) {
-      return const Center(child: CircularProgressIndicator()); // or a loader placeholder
+      return const Center(child: CircularProgressIndicator());
     }
 
-    print('TreeView children: ${_treeViewController!.children}'); // Debug output
+    print('TreeView children: ${_treeViewController!.children}');
 
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (mediaNotesNotifier.value.isEmpty) {
@@ -2306,7 +1631,8 @@ class _FileManagerState extends State<FileManager> {
           return false;
         }
         _handleSnackBarOnBack();
-        return true; // allow back navigation
+
+        return true;
       },
       child: Scaffold(
         appBar: AppBar(
@@ -2330,16 +1656,7 @@ class _FileManagerState extends State<FileManager> {
               ValueListenableBuilder<bool>(
                 valueListenable: isIndexing,
                 builder: (context, indexing, _) {
-                  return indexing
-                      ? Padding(
-                    padding: const EdgeInsets.only(right: 16),
-                    child: SizedBox(
-                      width: 20,
-                      height: 20,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
-                  )
-                      : IconButton(
+                  return  IconButton(
                     icon: Icon(_isSearching ? Icons.close : Icons.search),
                     onPressed: () {
                       setState(() {
@@ -2397,6 +1714,10 @@ class _FileManagerState extends State<FileManager> {
                   ? _treeViewController?.children
                   : _filteredNodes;
 
+              if (_searchInProgress) {
+                return Center(child: CircularProgressIndicator());
+              }
+
 
               return Column(
                 children: [
@@ -2426,7 +1747,6 @@ class _FileManagerState extends State<FileManager> {
                           labelStyle: TextStyle(fontSize: 16),
                           parentLabelStyle:
                           TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-                          // iconTheme: IconThemeData(size: 20, color: Colors.grey),
                           colorScheme: ColorScheme.light().copyWith(
                             primary: Colors.blueGrey.shade100,
                           ),
@@ -2537,10 +1857,8 @@ class _FileManagerState extends State<FileManager> {
 
 
   void _showDestinationConfirmation(String destinationPath) {
-    // Clear any existing snackbar
     ScaffoldMessenger.of(context).hideCurrentSnackBar();
 
-    // Show new snackbar
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text('Moving to: $destinationPath'),
@@ -2612,7 +1930,7 @@ class _FileManagerState extends State<FileManager> {
           ),
           TextButton(
             onPressed: () {
-              Navigator.pop(context); // Close the dialog first
+              Navigator.pop(context);
               NoteUtils.showNoteInputModal(
                 context,
                 imagePath,
@@ -2673,7 +1991,6 @@ class _FileManagerState extends State<FileManager> {
 
 
   Future<void> _reloadFileParent(String filePath) async {
-    // Keep this for operations where partial refresh is sufficient
     final parentPath = p.dirname(filePath);
     if (!mounted) return;
 
@@ -2692,7 +2009,6 @@ class _FileManagerState extends State<FileManager> {
     });
   }
 
-  /// CLASS OVER /// CLASS OVER /// CLASS OVER /// CLASS OVER /// CLASS OVER /// CLASS OVER /// CLASS OVER /// CLASS OVER /// CLASS OVER /// CLASS OVER /// CLASS OVER /// CLASS OVER /// CLASS OVER /// CLASS OVER /// CLASS OVER /// CLASS OVER /// CLASS OVER /// CLASS OVER /// CLASS OVER
 }
 
 
@@ -2713,7 +2029,6 @@ class _FolderMediaViewerState extends State<FolderMediaViewer> {
   bool _isMultiSelectMode = false;
   Set<String> _selectedFilePaths = {};
   File? _selectedFile;
- // Add this line to track selected file
   @override
   Widget build(BuildContext context) {
     WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -2787,12 +2102,11 @@ class _FolderMediaViewerState extends State<FolderMediaViewer> {
               return ValueListenableBuilder<String>(
                 valueListenable: fileAspectNotifier,
                 builder: (context, aspect, _) {
-                  debugPrint('Current file aspect: $aspect'); // Add debug print
+                  debugPrint('Current file aspect: $aspect');
 
-                  // Use a key that changes with aspect to force widget recreation
                   return KeyedSubtree(
                     key: ValueKey<String>(aspect),
-                    child: aspect == "smallImage"
+                    child: aspect == "list"
                         ? _buildListView(mediaFiles, mediaNotesNotifier.value)
                         : _buildGridView(mediaFiles, mediaNotesNotifier.value, aspect),
                   );
@@ -2835,7 +2149,7 @@ class _FolderMediaViewerState extends State<FolderMediaViewer> {
 
   Widget _buildListView(List<File> mediaFiles, Map<String, String> mediaNotes) {
     return ListView.builder(
-      key: PageStorageKey<String>('list_view'), // Add key
+      key: PageStorageKey<String>('list_view'),
       itemCount: mediaFiles.length,
       itemBuilder: (context, index) {
         final file = mediaFiles[index];
@@ -2901,17 +2215,17 @@ class _FolderMediaViewerState extends State<FolderMediaViewer> {
 
 
   Widget _buildGridView(List<File> mediaFiles, Map<String, String> mediaNotes, String aspect) {
-    final crossAxisCount = aspect == "midImage" ? 3 : 2; // Use raw keys
+    final crossAxisCount = aspect == "smallImage" ? 3 : 2;
 
     return GridView.builder(
-      key: PageStorageKey<String>('grid_view_$aspect'), // Unique key per aspect
+      key: PageStorageKey<String>('grid_view_$aspect'),
       gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
         crossAxisCount: crossAxisCount,
         crossAxisSpacing: 4,
         mainAxisSpacing: 4,
         childAspectRatio: 1,
       ),
-      itemCount: mediaFiles.length, // Add this line to limit the number of items
+      itemCount: mediaFiles.length,
 
       itemBuilder: (context, index) {
         final file = mediaFiles[index];
@@ -3011,7 +2325,7 @@ class _FolderMediaViewerState extends State<FolderMediaViewer> {
           ),
           TextButton(
             onPressed: () {
-              Navigator.pop(context); // Close the dialog first
+              Navigator.pop(context);
               NoteUtils.showNoteInputModal(
                 context,
                 imagePath,
@@ -3141,37 +2455,37 @@ class _FolderMediaViewerState extends State<FolderMediaViewer> {
       toastLength: Toast.LENGTH_LONG,
     );
 
-    final success = await Navigator.push<bool>(
+
+    Navigator.pushAndRemoveUntil(
       context,
       MaterialPageRoute(
-        builder: (context) => FileManager(
+        builder: (_) => FileManager(
           selectedPaths: _selectedFilePaths.toList(),
           enableFolderSelection: true,
+          onFilesMoved: () {
+            ProgressDialog.show(context, _selectedFilePaths.length);
+
+            try {
+              int completed = 0;
+              for (final path in _selectedFilePaths.toList()) {
+                completed++;
+                ProgressDialog.updateProgress(completed, _selectedFilePaths.length);
+              }
+
+              Fluttertoast.showToast(msg: "Moved ${_selectedFilePaths.length} files".tr);
+            } catch (e) {
+              Fluttertoast.showToast(msg: "Error moving files".tr);
+            } finally {
+              ProgressDialog.dismiss();
+              _exitMultiSelectMode();
+              setState(() {});
+            }
+          },
         ),
       ),
+        (route) => route.isFirst,
     );
 
-    if (success == true) {
-      ProgressDialog.show(context, _selectedFilePaths.length);
-
-      try {
-        int completed = 0;
-        // Implement your actual move logic here
-        for (final path in _selectedFilePaths.toList()) {
-          // await moveFileToDestination(path);
-          completed++;
-          ProgressDialog.updateProgress(completed, _selectedFilePaths.length);
-        }
-
-        Fluttertoast.showToast(msg: "Moved ${_selectedFilePaths.length} files".tr);
-      } catch (e) {
-        Fluttertoast.showToast(msg: "Error moving files".tr);
-      } finally {
-        ProgressDialog.dismiss();
-        _exitMultiSelectMode();
-        setState(() {});
-      }
-    }
   }
 
 
@@ -3256,7 +2570,7 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer> {
         camera = cameras.first;
       });
     });
-    final rootPath = "/storage/emulated/0"; // Or your base directory
+    final rootPath = "/storage/emulated/0";
     NoteUtils.loadAllNotes(rootPath);
 
   }
@@ -3303,18 +2617,16 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer> {
 
     switch (value) {
       case 'rename':
-        // final success = await FileUtils.showRenameDialog(context, file);
         final renamed = await FileUtils.showRenameDialog(
           context,
           file,
           onMoveRequested: () async {
-            // Show folder selection guidance
             Fluttertoast.showToast(
               msg: "Select destination folder".tr,
               toastLength: Toast.LENGTH_LONG,
             );
 
-            final success = await Navigator.push<bool>(
+            Navigator.pushReplacement(
               context,
               MaterialPageRoute(
                 builder: (context) => FileManager(
@@ -3324,15 +2636,10 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer> {
               ),
             );
 
-            // if (success == true) {
-            //   onFileChanged?.call();
-            //   onFilesMoved?.call();
-            // }
+
           },
         );
-        // if (success == true) {
-        //   Navigator.pop(context); // Go back after renaming
-        // }
+
         break;
 
       case 'annotate':
@@ -3341,7 +2648,7 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer> {
           file.path,
               (imagePath, noteText) {
             NoteUtils.addOrUpdateNote(imagePath, noteText, mediaNotesNotifier);
-            Navigator.pop(context); // Go back after saving note
+            Navigator.pop(context);
           },
         );
         break;
@@ -3354,7 +2661,7 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer> {
         break;
 
       case 'new':
-        Navigator.pop(context); // Close popup
+        Navigator.pop(context);
         Navigator.push(
           context,
           MaterialPageRoute(
@@ -3368,22 +2675,19 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer> {
         break;
 
       case 'move':
-        final success = await Navigator.push<bool>(
+        Navigator.pushReplacement(
           context,
           MaterialPageRoute(
             builder: (context) => FileManager(
-              selectedPaths: [file.path], // Pass the file to be moved
+              selectedPaths: [file.path],
               enableFolderSelection: true,
+              onFilesMoved: () {
+                Navigator.pop(context);
+              },
             ),
           ),
         );
 
-        if (success == true) {
-          Navigator.pop(context); // Close the current viewer if move was successful
-          // if (widget.onFilesMoved != null) {
-          //   widget.onFilesMoved!(); // Notify parent about the move
-          // }
-        }
         break;
 
       case 'share':
@@ -3424,7 +2728,7 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer> {
         );
 
         if (success == true) {
-          setState(() {}); // refresh image
+          setState(() {});
           Fluttertoast.showToast(msg: "Image cropped successfully");
         }
         break;
@@ -3465,15 +2769,6 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer> {
       body: Stack(
         children: [
           PageView.builder(
-            // controller: _pageController,
-            // itemCount: widget.mediaFiles.length,
-            // onPageChanged: (index) {
-            //   setState(() {
-            //     _currentIndex = index;
-            //     _initializeCurrentMedia();
-            //     _transformationController.value = Matrix4.identity(); // reset zoom
-            //   });
-            // },
 
             controller: _pageController,
             physics: _isZoomed
@@ -3498,31 +2793,7 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer> {
                 return LayoutBuilder(
                   builder: (context, constraints) {
                     return
-                    //   GestureDetector(
-                    //   behavior: HitTestBehavior.opaque,
-                    //   onDoubleTap: () {
-                    //     if (_transformationController.value != Matrix4.identity()) {
-                    //       _transformationController.value = Matrix4.identity();
-                    //     } else {
-                    //       _transformationController.value = Matrix4.identity()..scale(2.0);
-                    //     }
-                    //   },
-                    //   child: InteractiveViewer(
-                    //     transformationController: _transformationController,
-                    //     panEnabled: true,
-                    //     scaleEnabled: true,
-                    //     minScale: 1.0,
-                    //     maxScale: 4.0,
-                    //
-                    //     child: Center(
-                    //       child: Transform.rotate(
-                    //         angle: (_rotationAngles[file.path] ?? 0) * 3.1415926535 / 180, // convert to radians
-                    //         child: Image.file(file),
-                    //       ),
-                    //     ),
-                    //
-                    //   ),
-                    // );
+
                       GestureDetector(
                         onDoubleTapDown: (details) {
                           final tapPosition = details.localPosition;
@@ -3600,7 +2871,7 @@ class _FullScreenMediaViewerState extends State<FullScreenMediaViewer> {
 
   Future<void> _refreshImage(String filePath) async {
     final provider = FileImage(File(filePath));
-    await provider.evict(); // 🔥 clear from Flutter image cache
+    await provider.evict();
   }
 
 

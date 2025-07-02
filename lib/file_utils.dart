@@ -98,20 +98,19 @@ class FileUtils {
               toastLength: Toast.LENGTH_LONG,
             );
 
-            final success = await Navigator.push<bool>(
+            Navigator.pushReplacement(
               context,
               MaterialPageRoute(
                 builder: (context) => FileManager(
                   selectedPaths: [file.path],
                   enableFolderSelection: true,
+                  onFilesMoved: () {
+                      onFileChanged?.call();
+                      onFilesMoved?.call();
+                  }
                 ),
               ),
             );
-
-            if (success == true) {
-              onFileChanged?.call();
-              onFilesMoved?.call();
-            }
           },
         );
         if (renamed != null) {
@@ -142,23 +141,24 @@ class FileUtils {
           toastLength: Toast.LENGTH_LONG,
         );
 
-        final success = await Navigator.push<bool>(
+      Navigator.pushAndRemoveUntil(
           context,
           MaterialPageRoute(
             builder: (context) => FileManager(
               selectedPaths: [file.path],
               enableFolderSelection: true,
-              onFilesMoved: onFilesMoved,
+              onFilesMoved:() {
+
+            onFileChanged?.call();
+            onFilesMoved?.call();
+
+            }
             ),
-          ),
-        );
+          ),  (route) => route.isFirst,
 
-        if (success == true) {
+      );
 
-          onFileChanged?.call();
-          onFilesMoved?.call();
 
-        }
         break;
       case 'share':
         await shareFile(context, file);
@@ -175,31 +175,16 @@ class FileUtils {
   }
 
 
-  // static Future<File?> deleteFile(BuildContext context, File file) async {
-  //   try {
-  //     await file.delete();
-  //     mediaReloadNotifier.value++;
-  //     Fluttertoast.showToast(msg: "fileDeleted".tr);
-  //     return file; // ✅ return deleted file
-  //   } catch (_) {
-  //     Fluttertoast.showToast(msg: "fileDeleteFailed".tr);
-  //     return null;
-  //   }
-  // }
-  //
+
 
   static Future<File?> deleteFile(BuildContext context, File file) async {
     try {
-      // Delete file
       await file.delete();
 
-      // Delete associated .txt note file
       final noteFile = File('${file.path}.txt');
       if (await noteFile.exists()) {
         await noteFile.delete();
       }
-
-      // Notify UI
       mediaNotesNotifier.value.remove(file.path);
       mediaReloadNotifier.value++;
 
@@ -370,20 +355,6 @@ class FileUtils {
         }
       }
 
-      // final notePath = '${file.path}.txt';
-      // if (await File(notePath).exists()) {
-      //   try {
-      //     final newNotePath = '$newPath.txt';
-      //     await File(notePath).rename(newNotePath);
-      //     mediaNotesNotifier.value = {
-      //       ...mediaNotesNotifier.value,
-      //       newPath: mediaNotesNotifier.value[file.path] ?? '',
-      //     };
-      //     mediaNotesNotifier.value.remove(file.path);
-      //   } catch (noteError) {
-      //     debugPrint('Note move failed: $noteError');
-      //   }
-      // }
       final notePath = p.withoutExtension(file.path) + '.txt';
       if (await File(notePath).exists()) {
         try {
@@ -392,14 +363,12 @@ class FileUtils {
 
           final noteContent = mediaNotesNotifier.value[file.path] ?? '';
 
-          // Update local note map
           mediaNotesNotifier.value = {
             ...mediaNotesNotifier.value,
             newPath: noteContent,
           };
           mediaNotesNotifier.value.remove(file.path);
 
-          // Update index as well
           IndexManager.instance.updateNoteContent(newPath, noteContent);
         } catch (noteError) {
           debugPrint('Note move failed: $noteError');
